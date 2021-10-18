@@ -5,7 +5,7 @@ import mne
 import urllib.request
 import numpy as np
 from typing import Optional, Tuple, Dict, List
-from helpers import EEG_expert_labels, _logging_messages
+from helpers import eeg_expert_labels, _logging_messages
 
 # TODO: Add functionalities to handle other sampling frequencies besides 50 Hz
 
@@ -159,7 +159,7 @@ def load_subject(
         temp = np.array(list(map(int, lines[1:])))
         labels = np.kron(temp, np.ones(5 * new_fs))
         aasm = {'N3': list(), 'N2': list(), 'N1': list(), 'REM': list(), 'wake': list()}
-        aasm = EEG_expert_labels(eeg, labels, aasm)
+        aasm = eeg_expert_labels(eeg, labels, aasm)
         labels_score['AASM'] = labels
 
         # R&K labels
@@ -168,7 +168,7 @@ def load_subject(
         temp = np.array(list(map(int, lines[1:])))
         labels = np.kron(temp, np.ones(5 * new_fs))
         rk = {'S4': list(), 'S3': list(), 'S2': list(), 'S1': list(), 'REM': list(), 'wake': list()}
-        rk = EEG_expert_labels(eeg, labels, rk)
+        rk = eeg_expert_labels(eeg, labels, rk)
         labels_score['RK'] = labels
 
         with open(pickle_file, 'wb') as f:
