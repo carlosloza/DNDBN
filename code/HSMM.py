@@ -7,6 +7,8 @@ from utils import tfp_linear_t
 from DBN import DynamicBayesianNetwork
 tf.keras.backend.set_floatx('float64')
 
+# TODO: change name of _log_prob() method
+
 
 class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
 
@@ -20,7 +22,7 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
         # pre-processing
         self.n_seq = len(eeg)
         self.x, self.y, self.labels, self.n = \
-            preprocess(eeg, ar_order=self.ar_order, labels=labels, normalize=self.normalize)
+            preprocess(eeg, labels=labels, ar_order=self.ar_order, normalize=self.normalize)
         # Observation model
         self.observation_parameters['name'] = observation_model['name'] if observation_model is not None else 'linear'
         self.observation_parameters['models'] = [None for _ in range(self.K)]
@@ -157,7 +159,7 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
                 self.em['gamma'][i_seq] = hard2soft_labels(self.em['gamma'][i_seq], low=prob_band[0], high=prob_band[1])
         if soft_labels is not None:
             self.x, self.y, self.labels, self.n = \
-                preprocess(eeg, ar_order=self.ar_order, labels=None, normalize=self.normalize)
+                preprocess(eeg, labels=None, ar_order=self.ar_order, normalize=self.normalize)
             self.duration_parameters['d_max'] = max_duration
             if min_duration is None or min_duration <= self.ar_order:
                 min_duration = self.ar_order
@@ -265,7 +267,7 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
         dim_idx = list(np.ix_(*[np.arange(i) for i in shp[1:]]))
         dim_idx.insert(0, np.inf)
         for i_seq in range(n_seq):
-            x, y, _, n = preprocess([eeg[i_seq]], ar_order=self.ar_order, normalize=self.normalize)
+            x, y, _, n = preprocess([eeg[i_seq]], labels=None, ar_order=self.ar_order, normalize=self.normalize)
             logp_yz = -np.inf * np.ones((n[0], self.K, 1))
             for k in range(self.K):
                 model = self.observation_parameters['models'][k]
@@ -319,7 +321,7 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
         n_seq = len(eeg)
         log_like = list()
         for i_seq in range(n_seq):
-            x, y, _, n = preprocess([eeg[i_seq]], ar_order=self.ar_order, normalize=self.normalize)
+            x, y, _, n = preprocess([eeg[i_seq]], labels=None, ar_order=self.ar_order, normalize=self.normalize)
             logp_yz = -np.inf * np.ones((n[0], self.K, 1))
             for k in range(self.K):
                 model = self.observation_parameters['models'][k]
@@ -329,12 +331,12 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
             logalpha_em_prev = logp_yz[self.idx_ini, ...] + logp_dz + logp_z_ini
             aux = logp_yz + logp_dz[..., -1:]
             for i in range(self.idx_ini+1, n[0]):
-                logalpha_aux_dmin = log_sum_exp(logalpha_em_prev[..., 0:1] + logA, axis=1)[..., None]
-                logalpha_em_update_dmax = aux[i: i + 1, ...] + logalpha_aux_dmin
+                logalpha_aux_d_min = log_sum_exp(logalpha_em_prev[..., 0:1] + logA, axis=1)[..., None]
+                logalpha_em_update_d_max = aux[i: i + 1, ...] + logalpha_aux_d_min
                 logalpha_em_update_d = logp_yz[i, ...] + \
-                                       log_sum_exp(np.concatenate((logp_dz[..., :max_duration - 1] + logalpha_aux_dmin,
+                                       log_sum_exp(np.concatenate((logp_dz[..., :max_duration - 1] + logalpha_aux_d_min,
                                                                   logalpha_em_prev[..., 1:]), axis=0), axis=0)
-                logalpha_em_prev = np.concatenate((logalpha_em_update_d[None, ...], logalpha_em_update_dmax), axis=-1)
+                logalpha_em_prev = np.concatenate((logalpha_em_update_d[None, ...], logalpha_em_update_d_max), axis=-1)
             log_like.append(log_sum_exp(logalpha_em_prev))
         return log_like
 
@@ -346,7 +348,7 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
         n_seq = len(eeg)
         gamma = list()
         for i_seq in range(n_seq):
-            x, y, _, n = preprocess([eeg[i_seq]], ar_order=self.ar_order, normalize=self.normalize)
+            x, y, _, n = preprocess([eeg[i_seq]], labels=None, ar_order=self.ar_order, normalize=self.normalize)
             logp_yz = -np.inf * np.ones((n[0], self.K, 1))
             for k in range(self.K):
                 model = self.observation_parameters['models'][k]
@@ -377,7 +379,7 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
         w = list()
         df = list()
         for i_seq in range(n_seq):
-            x, y, _, n = preprocess([eeg[i_seq]], ar_order=self.ar_order, normalize=self.normalize)
+            x, y, _, n = preprocess([eeg[i_seq]], labels=None, ar_order=self.ar_order, normalize=self.normalize)
             w_seq = np.zeros((n[0], self.K))
             df_seq = np.zeros((n[0] - self.ar_order, self.K))
             for k in range(self.K):
@@ -461,16 +463,16 @@ class DeepHiddenSemiMarkovModel(DynamicBayesianNetwork):
         return self
 
     @staticmethod
-    def _log_prob(logalphaEM, logp_z_ini, logA, logp_yz, logp_dz, idx_ini, max_duration):
-        logalphaEMprev = logp_yz[idx_ini, ...] + logp_dz + logp_z_ini
-        logalphaEM[idx_ini:idx_ini + 1, ...] = logalphaEMprev
+    def _log_prob(logalpha_em, logp_z_ini, logA, logp_yz, logp_dz, idx_ini, max_duration):
+        logalpha_em_prev = logp_yz[idx_ini, ...] + logp_dz + logp_z_ini
+        logalpha_em[idx_ini:idx_ini + 1, ...] = logalpha_em_prev
         aux = logp_yz + logp_dz[..., -1:]
-        for i in range(idx_ini + 1, logalphaEM.shape[0]):
-            logalphaauxdmin = log_sum_exp(logalphaEMprev[..., 0:1] + logA, axis=1)[..., None]
-            logalphaEMposdmax = aux[i: i + 1, ...] + logalphaauxdmin
-            logalphaEMposd = logp_yz[i, ...] + \
-                             log_sum_exp(np.concatenate((logp_dz[..., :max_duration - 1] + logalphaauxdmin,
-                                                         logalphaEMprev[..., 1:]), axis=0), axis=0)
-            logalphaEMprev = np.concatenate((logalphaEMposd[None, ...], logalphaEMposdmax), axis=-1)
-            logalphaEM[i:i + 1, ...] = logalphaEMprev
-        return logalphaEM
+        for i in range(idx_ini + 1, logalpha_em.shape[0]):
+            logalpha_aux_d_min = log_sum_exp(logalpha_em_prev[..., 0:1] + logA, axis=1)[..., None]
+            logalpha_em_update_d_max = aux[i: i + 1, ...] + logalpha_aux_d_min
+            logalpha_em_update_d = logp_yz[i, ...] + \
+                                   log_sum_exp(np.concatenate((logp_dz[..., :max_duration - 1] + logalpha_aux_d_min,
+                                                               logalpha_em_prev[..., 1:]), axis=0), axis=0)
+            logalpha_em_prev = np.concatenate((logalpha_em_update_d[None, ...], logalpha_em_update_d_max), axis=-1)
+            logalpha_em[i:i + 1, ...] = logalpha_em_prev
+        return logalpha_em
